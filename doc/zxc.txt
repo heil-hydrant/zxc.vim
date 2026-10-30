@@ -190,11 +190,24 @@ Filetype for http request.
     Name        | Type          | Description
     ----------  | ---------     | ----------
     b:host      | string        | Host to send request to (includes port).
+                |               | For HTTP/2 this is the upstream destination,
+                |               | not the :authority pseudo-header.
                 |               |
-    b:scheme    | string        | http/https
+    b:authority | string        | HTTP/2 :authority pseudo-header.
+                |               | Only set for HTTP/2 requests. Editing it
+                |               | does not change b:host.
+                |               |
+    b:h2_scheme | string        | HTTP/2 :scheme pseudo-header.
+                |               | Only set for HTTP/2 requests. Editing it
+                |               | does not change b:scheme.
+                |               |
+    b:is_h2     | number        | 1 for HTTP/2 requests, 0 otherwise.
+                |               | Set by the backend.
+                |               |
+    b:scheme    | string        | Scheme used to connect to b:host: http/https.
                 |               |
     b:sni       | string        | SNI to use in TLS handshake.
-                |               | Only when b:http is false.
+                |               | Only when b:scheme is https.
                 |               |
     b:update    | bool          | Whether request should be updated according
                 |               | to RFC.

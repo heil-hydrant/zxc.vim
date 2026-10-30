@@ -25,18 +25,28 @@ endfunc
 
 func s:SendVar()
     let list = []
-    call add(list, expand('%:r'))
+    let target = expand('%:r')
+    call add(list, target)
 
-    if str2nr(expand('%r')) == 0
+    if str2nr(target) == 0
         for index in range(1, line('$'))
             call add(list, getline(index))
         endfor
         let list = list ->map('trim(v:val)') ->filter('!empty(v:val)')
     else
         for index in range(1, line('$'))
-            let parts = getline(index) ->split("=") ->map('trim(v:val)')
-            let dict = {parts[0]: parts[1]}
-            call add(list, dict)
+            let raw_line = getline(index)
+            let eq_idx = stridx(raw_line, '=')
+            if eq_idx < 1
+                continue
+            endif
+            let raw_key = trim(raw_line[: eq_idx - 1])
+            let val = trim(raw_line[eq_idx + 1 :])
+            " Strip leading colons: Vim rejects names like b::authority
+            let key = substitute(raw_key, '^:\+', '', '')
+            if !empty(key)
+                call add(list, {key: val})
+            endif
         endfor
     endif
 

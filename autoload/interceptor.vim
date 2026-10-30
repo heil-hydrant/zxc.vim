@@ -72,16 +72,35 @@ func HandleMsg(msg)
 
     " 5. Set Request Buffer variables
     if ft == "req"
+        let is_h2 = get(a:msg, "is_h2", v:false) == v:true
+        call setbufvar('$', "is_h2", is_h2 ? 1 : 0)
+
+        " Destination host/scheme come from server_info. They are not the
+        " HTTP/2 :authority / :scheme pseudo-headers.
         let host = a:msg.server_info.host
         if has_key(a:msg.server_info, "http")
             let scheme = "http"
         else
             let scheme = "https"
         endif
+
         call setbufvar('$', "host", host)
         call setbufvar('$', "scheme", scheme)
         call setbufvar('$', "old_host", host)
         call setbufvar('$', "old_scheme", scheme)
+
+        if is_h2
+            let authority = ""
+            let h2_scheme = ""
+            if has_key(a:msg, "h2_info")
+                let authority = get(a:msg.h2_info, "authority", "")
+                let h2_scheme = get(a:msg.h2_info, "scheme", "")
+            endif
+            call setbufvar('$', "authority", authority)
+            call setbufvar('$', "old_authority", authority)
+            call setbufvar('$', "h2_scheme", h2_scheme)
+            call setbufvar('$', "old_h2_scheme", h2_scheme)
+        endif
 
         " Sni
         if has_key(a:msg.server_info, "sni")
@@ -142,6 +161,12 @@ endfunction
 "               scheme: http,
 "               sni: b:sni } } }
 "
+"       HTTP/2 requests omit server_info and send instead:
+"           {req: {
+"               h2_info: {
+"                   authority: b:authority,
+"                   scheme: b:h2_scheme } } }
+"
 "   Response:
 "       {res: { update: bool }
 "
@@ -156,7 +181,8 @@ endfunction
 "       2. Check if file is modified.
 "       3. For ft req and wreq, check if need_response.
 "       4. For ft req and res, check if update.
-"       5. For ft req, if b:scheme or b:host is changed , build addinfo.
+"       5. For ft req, build server_info on host/scheme/sni change, or
+"          h2_info for HTTP/2 buffers.
 "       6. Build tosend and send to channel.
 "       7. Write and delete the buffer.
 
@@ -168,8 +194,14 @@ func s:Send(need_response)
         return
     endtry
 
-    " 2. Check if file is modified
-    if &modified || exists('b:modified')
+    " 2. Check if file or h2 pseudo-headers are modified
+    let is_h2 = get(b:, 'is_h2', 0) == 1
+    let is_pseudo_mod = is_h2
+          \ && ((exists('b:authority') && exists('b:old_authority')
+          \      && b:authority !=# b:old_authority)
+          \     || (exists('b:h2_scheme') && exists('b:old_h2_scheme')
+          \      && b:h2_scheme !=# b:old_h2_scheme))
+    if &modified || exists('b:modified') || is_pseudo_mod
         let info['modified'] = v:true
     endif
 
@@ -185,20 +217,31 @@ func s:Send(need_response)
         call add_update#Add(finfo)
     endif
 
-    " 5. For filetype request, if b:scheme or b:host is changed , build addinfo
+    " 5. For filetype request, build server_info or h2_info
     if &ft == "req"
-        let addinfo = {}
-        if (b:scheme != b:old_scheme) || (b:host != b:old_host)
-            let addinfo = ServerInfo()
-        endif
+        if is_h2
+            " HTTP/2 streams resume in-place: pseudo-headers travel in
+            " h2_info. Destination changes are not supported yet; the backend
+            " ignores NewConnection for HTTP/2 and sends on the existing
+            " upstream connection.
+            let finfo["h2_info"] = {
+                        \ "authority": get(b:, "authority", ""),
+                        \ "scheme": get(b:, "h2_scheme", "")
+                        \ }
+        else
+            let addinfo = {}
+            if (b:scheme != b:old_scheme) || (b:host != b:old_host)
+                let addinfo = ServerInfo()
+            endif
 
-        " Add sni
-        if empty(addinfo) && s:IsSniModified()
-            let addinfo = ServerInfo()
-        endif
+            " Add sni
+            if empty(addinfo) && s:IsSniModified()
+                let addinfo = ServerInfo()
+            endif
 
-        if !empty(addinfo)
-            let finfo["server_info"] = addinfo["server_info"]
+            if !empty(addinfo)
+                let finfo["server_info"] = addinfo["server_info"]
+            endif
         endif
     endif
 

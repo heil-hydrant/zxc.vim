@@ -15,8 +15,10 @@ function Tapi_SetBufVars(bufnum, arglist)
     let bufno = dest ->str2nr()
     if bufno != 0
         for item in a:arglist
-            let key = keys(item)[0]
-            let val = item[key]
+            let raw_key = keys(item)[0]
+            let val = item[raw_key]
+            " Strip leading colons to avoid E461: Illegal variable name
+            let key = substitute(raw_key, '^:\+', '', '')
             call setbufvar(bufno, key, val)
         endfor
     else

@@ -64,7 +64,20 @@ endfunc
 "       2. Call create_popup#Create with dict and current buffer number
 
 func s:EditBufVar()
-    let vars = { "host": b:host }
+    let is_h2 = get(b:, 'is_h2', 0) == 1
+    let vars = {}
+
+    if is_h2
+        let vars["authority"] = get(b:, 'authority', '')
+        let vars["h2_scheme"] = get(b:, 'h2_scheme', '')
+    else
+        let vars["host"] = b:host
+        if exists("b:scheme")
+            let vars["scheme"] = b:scheme
+        else
+            let vars["scheme"] = "https"
+        endif
+    endif
 
     if exists("b:update")
         let vars["update"] = b:update
@@ -72,13 +85,8 @@ func s:EditBufVar()
         let vars["update"] = v:true
     endif
 
-    if exists("b:scheme")
-        let vars["scheme"] = b:scheme
-    else
-        let vars["scheme"] = "https"
-    endif
-
-    if vars["scheme"] == "https" && exists("b:sni")
+    " Sni only applies to new TLS connections, not multiplexed H2 streams
+    if !is_h2 && vars["scheme"] == "https" && exists("b:sni")
         let vars["sni"] = b:sni
     endif
 
