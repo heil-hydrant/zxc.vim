@@ -12,14 +12,46 @@ let b:did_ftplugin = 1
 "               'server_info': {
 "                   'http': v:true
 "                   'host': b:host
-"                   'sni': b:sni } }
+"                   'sni': b:sni },
+"               'is_h2': v:true,
+"               'h2_info': {
+"                   'authority': b:authority,
+"                   'scheme': b:h2_scheme } }
+
+func s:BuildForwardInfo()
+    call SetHostStatusLine()
+    let info = ServerInfo()
+    if empty(info)
+        return {}
+    endif
+
+    if get(b:, 'is_h2', 0) == 1
+        let info["is_h2"] = v:true
+        let h2_info = {}
+        if exists('b:authority')
+            let h2_info["authority"] = b:authority
+        endif
+        if exists('b:h2_scheme')
+            let h2_info["scheme"] = b:h2_scheme
+        endif
+        if !empty(h2_info)
+            let info["h2_info"] = h2_info
+        endif
+    endif
+
+    return info
+endfunc
 
 func s:SendToBinary(to)
-    let info = ServerInfo()
+    let info = s:BuildForwardInfo()
+    if empty(info)
+        echom "no host"
+        return
+    endif
     let info["to"] = a:to
     let info["file"] = expand('%')
     let tosend = {"Forward": info}
-    call logger#Log("Send to Repeater| " .. string(tosend))
+    call logger#Log("Sent| " .. string(tosend))
     call ch_sendexpr(g:channel, tosend)
 endfunc
 
@@ -28,30 +60,73 @@ func RequestToAddon(addon)
     call s:SendToBinary(addon)
 endfunc
 
+" Description:
+"       Load request metadata from extended attributes.
+"
+"       ForwardInfo values already set on the buffer take priority. Xattrs
+"       only fill variables that are still missing, which keeps directly
+"       opened request files working on both Linux and macOS.
+
+func s:LoadXattrVars()
+    if get(b:, 'xattr_loaded', 0)
+        return
+    endif
+    let b:xattr_loaded = 1
+
+    let attrs = xattr#Read(expand('%'))
+    if empty(attrs)
+        return
+    endif
+
+    if !exists('b:host') && has_key(attrs, 'host')
+        let b:host = attrs.host
+    endif
+
+    if !exists('b:scheme')
+        let b:scheme = has_key(attrs, 'http') ? "http" : "https"
+    endif
+
+    if !exists('b:sni') && has_key(attrs, 'sni')
+        let b:sni = attrs.sni
+    endif
+
+    if !exists('b:is_h2') && get(attrs, 'is_h2', '') == '1'
+        let b:is_h2 = 1
+    endif
+
+    if get(b:, 'is_h2', 0) == 1
+        if !exists('b:authority') && has_key(attrs, 'authority')
+            let b:authority = attrs.authority
+        endif
+        if !exists('b:h2_scheme') && has_key(attrs, 'h2_scheme')
+            let b:h2_scheme = attrs.h2_scheme
+        endif
+    endif
+endfunc
+
 func SetHostStatusLine()
-    if !exists('b:scheme') 
+    if !exists('b:host') || !exists('b:scheme')
+          \ || (get(b:, 'is_h2', 0) == 1
+          \     && (!exists('b:authority') || !exists('b:h2_scheme')))
+        call s:LoadXattrVars()
+    endif
+
+    if !exists('b:scheme')
         let b:scheme = "https"
     endif
 
-    if !exists('b:host') 
+    if !exists('b:host')
         let b:host = ""
-        if g:has_getfattr
-            let cmd = "getfattr -dm user " .. expand('%')
-            let result = system(cmd) ->split("\n") [1:-2]
-            for e in result
-                if stridx(e, "user.host") == 0
-                    let b:host = e ->split("=")[1] ->trim('"')
-                elseif stridx(e, "user.http") == 0
-                    let b:scheme = "http"
-                endif
-            endfor
-        endif
     endif
+
     setl statusline=\>
     setl statusline+=\ %{b:scheme}
     setl statusline+=%=
     setl statusline+=\>
     setl statusline+=\ %{b:host}
+    if get(b:, 'is_h2', 0) == 1
+        setl statusline+=\ [h2]
+    endif
 endfunc
 
 " Steps:

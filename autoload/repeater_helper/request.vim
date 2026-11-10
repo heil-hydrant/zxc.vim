@@ -26,7 +26,7 @@ func repeater_helper#request#Repeat(query)
     silent execute 'wincmd w'
     silent execute 'horizontal wincmd ='
 
-    call SetBufVar(a:query.server_info)
+    call SetBufVar(a:query)
 endfunc
 
 " Description:
@@ -39,7 +39,11 @@ endfunc
 "           "server_info": {
 "               "http": v:true
 "               "host": b:host,
-"               "sni": b:sni    } } }
+"               "sni": b:sni },
+"           "is_h2": v:true,
+"           "h2_info": {
+"               "authority": b:authority,
+"               "scheme": b:h2_scheme } } }
 "
 " Steps:
 "       1. Write the file.
@@ -50,11 +54,41 @@ endfunc
 "       6. Get response time and size.
 "       7. Set status line. time + size or echo error.
 
+func s:BuildSendInfo()
+    call SetHostStatusLine()
+    let info = ServerInfo()
+    if empty(info)
+        return {}
+    endif
+
+    if get(b:, 'is_h2', 0) == 1
+        let info["is_h2"] = v:true
+        let h2_info = {}
+        if exists('b:authority')
+            let h2_info["authority"] = b:authority
+        endif
+        if exists('b:h2_scheme')
+            let h2_info["scheme"] = b:h2_scheme
+        endif
+        if !empty(h2_info)
+            let info["h2_info"] = h2_info
+        endif
+    endif
+
+    return info
+endfunc
+
 func repeater_helper#request#Send()
     silent execute 'write!'
-    let tosend = {}
 
-    let tosend["Send"] = ServerInfo()
+    let send_info = s:BuildSendInfo()
+    if empty(send_info)
+        echom "no host"
+        return
+    endif
+
+    let tosend = {}
+    let tosend["Send"] = send_info
     let tosend["Send"]["file"] = expand('%')
 
     " 3. Check if frame should be updated.
@@ -93,4 +127,7 @@ func repeater_helper#request#Send()
     setl statusline=\>\ %{t:time}
     setl statusline+=%=
     setl statusline+=\>\ %{t:size}
+    if get(b:, 'is_h2', 0) == 1
+        setl statusline+=\ HTTP/2
+    endif
 endfunc

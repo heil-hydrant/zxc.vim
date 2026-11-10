@@ -23,7 +23,7 @@ func repeater_helper#websocket#Repeat(query)
     call tab#add()
 
     silent execute 'e ' .. req_file
-    call SetBufVar(a:query.server_info)
+    call SetBufVar(a:query)
     call logger#Log("scheme| " .. b:scheme)
     call logger#Log("host| " .. b:host)
 endfunc

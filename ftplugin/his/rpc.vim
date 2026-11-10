@@ -30,6 +30,20 @@ func s:Build_Req_Info()
         let server_info['http'] = v:true
     endif
     let tosend = {"file": file, "server_info": server_info}
+    let attrs = xattr#Read(file)
+    if get(attrs, 'is_h2', '') == '1'
+        let tosend['is_h2'] = v:true
+        let h2_info = {}
+        if has_key(attrs, 'authority')
+            let h2_info['authority'] = attrs.authority
+        endif
+        if has_key(attrs, 'h2_scheme')
+            let h2_info['scheme'] = attrs.h2_scheme
+        endif
+        if !empty(h2_info)
+            let tosend['h2_info'] = h2_info
+        endif
+    endif
     return tosend
 endfunc
 

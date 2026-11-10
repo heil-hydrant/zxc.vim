@@ -18,8 +18,12 @@ endfunc
 "       {   "file": r-id/req,
 "           "server_info": {
 "               "scheme": b:scheme,
-"               "host": b:host
-"               "sni": b:sni (only for https and optional) } }
+"               "host": b:host,
+"               "sni": b:sni (only for https and optional) },
+"           "is_h2": v:true (optional),
+"           "h2_info": {
+"               "authority": b:authority,
+"               "scheme": b:h2_scheme } (optional) }
 "
 "
 " Steps:
@@ -37,7 +41,7 @@ func HandleMsg(msg)
     endif
 endfunc
 
-func SetBufVar(info)
+func s:ApplyServerInfo(info)
     let b:host = a:info.host
     if a:info ->has_key('http')
         let b:scheme = "http"
@@ -47,6 +51,32 @@ func SetBufVar(info)
     if a:info ->has_key('sni')
         let b:sni = a:info.sni
     endif
+endfunc
+
+func s:ApplyH2Info(info)
+    let b:is_h2 = 1
+    let h2_info = get(a:info, 'h2_info', {})
+    if h2_info ->has_key('authority')
+        let b:authority = h2_info.authority
+    endif
+    if h2_info ->has_key('scheme')
+        let b:h2_scheme = h2_info.scheme
+    endif
+endfunc
+
+func SetBufVar(info)
+    if a:info ->has_key('server_info') && !empty(a:info.server_info)
+        call s:ApplyServerInfo(a:info.server_info)
+    endif
+
+    if a:info ->has_key('is_h2')
+        if a:info.is_h2
+            call s:ApplyH2Info(a:info)
+        else
+            let b:is_h2 = 0
+        endif
+    endif
+
     call SetHostStatusLine()
 endfunc
 
